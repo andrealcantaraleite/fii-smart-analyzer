@@ -1,0 +1,5 @@
+Flask3.0.3
+Flask-Cors5.0.0
+requests2.32.4
+beautifulsoup44.12.3
+gunicorn==21.2.0

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FII Smart Analyzer | Pro</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        status: { good: '#10b981', warning: '#f59e0b', bad: '#ef4444' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.8); }
+        
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1); border-radius: 50%;
+            border-top: 3px solid #3b82f6; width: 24px; height: 24px;
+            animation: spin 1s linear infinite; display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="min-h-screen p-6 md:p-12">
+
+    <!-- Cabeçalho e Busca -->
+    <div class="max-w-6xl mx-auto mb-8 text-center">
+        <h1 class="text-4xl md:text-5xl font-bold mb-2 tracking-tight"><span class="text-blue-500"><i class="fa-solid fa-robot mr-3"></i>FII</span> Smart Analyzer</h1>
+        <p class="text-slate-400 text-lg mb-8">Extração de dados reais (StatusInvest) e Análise Algorítmica.</p>
+        
+        <form id="searchForm" class="max-w-md mx-auto relative">
+            <input type="text" id="tickerInput" required placeholder="Digite o Fundo (Ex: HGLG11)" 
+                class="w-full bg-slate-800 border border-slate-600 rounded-full px-6 py-4 text-lg text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 uppercase transition-all shadow-lg">
+            <button type="submit" class="absolute right-2 top-2 bottom-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full px-6 font-semibold transition-colors flex items-center justify-center min-w-[120px]">
+                <span id="btnText">Analisar</span>
+                <span id="btnLoader" class="loader hidden"></span>
+            </button>
+        </form>
+        <p id="errorMsg" class="text-status-bad mt-4 hidden opacity-0 transition-opacity duration-300">⚠️ Fundo não encontrado ou robô offline.</p>
+    </div>
+
+    <!-- Dashboard (Oculto inicialmente) -->
+    <div id="dashboard" class="max-w-6xl mx-auto hidden opacity-0 transition-opacity duration-500">
+        
+        <!-- Métricas Principais -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="glass-panel rounded-2xl p-5 text-center shadow-lg">
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Cotação Atual</p>
+                <h2 id="valPrice" class="text-2xl font-bold text-white">R$ 0,00</h2>
+                <p id="valSector" class="text-xs text-blue-400 mt-2 truncate">Setor</p>
+            </div>
+            <div class="glass-panel rounded-2xl p-5 text-center shadow-lg">
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">P/VP</p>
+                <h2 id="valPvp" class="text-2xl font-bold">0.00</h2>
+                <div class="flex justify-center"><p id="labelPvp" class="text-xs mt-2 px-2 py-0.5 rounded-full w-max">...</p></div>
+            </div>
+            <div class="glass-panel rounded-2xl p-5 text-center shadow-lg">
+                <p class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Dividend Yield</p>
+                <h2 id="valDy" class="text-2xl font-bold text-white">0,00%</h2>
+                <p class="text-xs text-slate-400 mt-2">Últimos 12 meses</p>
+            </div>
+            <div class="glass-panel rounded-2xl p-5 text-center shadow-lg">
+                <p id="labelLiq" class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1">Liquidez</p>
+                <h2 id="valLiq" class="text-2xl font-bold text-white">0</h2>
+                <p class="text-xs text-slate-400 mt-2">Negociações/Dia</p>
+            </div>
+        </div>
+
+        <!-- Área Central: Gráficos e Parecer -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Coluna Esquerda: Score e Texto -->
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                <!-- Gauge Card -->
+                <div class="glass-panel rounded-3xl p-6 shadow-xl flex flex-col items-center relative overflow-hidden">
+                    <h3 class="text-slate-300 font-semibold mb-4 z-10">Score do Robô</h3>
+                    <div class="relative w-48 h-48 z-10">
+                        <canvas id="scoreChart"></canvas>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center mt-4">
+                            <span id="scoreValue" class="text-5xl font-bold text-white">0</span>
+                            <span class="text-slate-400 text-sm">/ 100</span>
+                        </div>
+                    </div>
+                    <div id="scoreLabel" class="text-lg font-bold px-4 py-1 rounded-full border mt-2 z-10 text-center">...</div>
+                </div>
+
+                <!-- Fundamentos Rápidos -->
+                <div class="glass-panel rounded-3xl p-6 shadow-xl">
+                    <h3 class="text-slate-300 font-semibold mb-4 border-b border-slate-700 pb-2">Raio-X</h3>
+                    <ul id="fundDetailsList" class="space-y-3 text-sm">
+                        <!-- Injetado via JS -->
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Coluna Direita: Parecer e Histórico -->
+            <div class="lg:col-span-2 flex flex-col gap-6">
+                <!-- Veredito de IA -->
+                <div class="glass-panel rounded-3xl p-6 shadow-xl border-t-4 border-t-blue-500">
+                    <h3 class="text-xl text-white font-bold mb-3 flex items-center"><i class="fa-solid fa-microchip text-blue-500 mr-3"></i>Parecer Analítico</h3>
+                    <div id="analysisText" class="text-slate-300 text-base leading-relaxed">
+                        <!-- Injetado via JS -->
+                    </div>
+                </div>
+
+                <!-- Gráficos Históricos -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass-panel rounded-3xl p-6 shadow-xl">
+                        <h3 class="text-slate-300 font-semibold mb-4 text-sm"><i class="fa-solid fa-chart-line mr-2"></i>Cotação Real (6 Meses)</h3>
+                        <div class="h-48"><canvas id="priceChart"></canvas></div>
+                    </div>
+                    <div class="glass-panel rounded-3xl p-6 shadow-xl">
+                        <h3 class="text-slate-300 font-semibold mb-4 text-sm"><i class="fa-solid fa-money-bill-wave mr-2"></i>Projeção de Rendimentos</h3>
+                        <div class="h-48"><canvas id="dividendChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LÓGICA JAVASCRIPT -->
+    <script>
+        const apiUrl = 'http://127.0.0.1:5000/api/analyze/';
+        let scoreChartInst = null; let divChartInst = null; let priceChartInst = null;
+
+        const AnalysisEngine = {
+            calculateScore: function(data) {
+                let score = 50; let logs = [];
+                const pvp = parseFloat(data.pvp);
+                if (data.type === 'Papel') {
+                    if (pvp <= 1.0) { score += 20; logs.push("P/VP atrativo para fundo de papel (sem ágio)."); }
+                    else if (pvp <= 1.05) { score -= 5; logs.push("Leve ágio no P/VP, requer atenção para papel."); }
+                    else { score -= 20; logs.push("P/VP muito esticado para fundo de papel. Risco de perda de capital."); }
+                } else {
+                    if (pvp < 0.95) { score += 20; logs.push("Excelente desconto patrimonial (Comprando imóvel com desconto)."); }
+                    else if (pvp <= 1.05) { score += 10; logs.push("Preço justo em relação aos imóveis."); }
+                    else { score -= 10; logs.push("Fundo sendo negociado acima do valor de avaliação dos imóveis."); }
+                }
+
+                const dy = parseFloat(data.dy);
+                if (dy >= 10) { score += 20; logs.push("Dividend Yield elevado, excelente gerador de renda."); }
+                else if (dy >= 7.5) { score += 15; logs.push("Dividend Yield saudável e sustentável."); }
+                else { score += 5; logs.push("Dividend Yield abaixo da média do mercado."); }
+
+                if (data.liquidity > 2000000) { score += 10; logs.push("Altíssima liquidez, fácil de comprar e vender."); }
+                else if (data.liquidity > 500000) { score += 5; logs.push("Liquidez adequada para investidor pessoa física."); }
+                else { score -= 15; logs.push("Baixa liquidez, risco de não conseguir vender rápido."); }
+
+                score = Math.max(0, Math.min(100, score));
+                let rating = ''; let colorClass = '';
+                if (score >= 80) { rating = 'BOM (Oportunidade)'; colorClass = 'text-status-good border-status-good/30 bg-status-good/10'; }
+                else if (score >= 60) { rating = 'PONDERADO (Manter)'; colorClass = 'text-status-warning border-status-warning/30 bg-status-warning/10'; }
+                else { rating = 'RUIM (Risco Alto)'; colorClass = 'text-status-bad border-status-bad/30 bg-status-bad/10'; }
+
+                return { score, logs, rating, colorClass };
+            }
+        };
+
+        const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+        const formatNumber = (val) => new Intl.NumberFormat('pt-BR').format(val);
+
+        document.getElementById('searchForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const ticker = document.getElementById('tickerInput').value.toUpperCase().trim();
+            if (!ticker) return;
+
+            const btnText = document.getElementById('btnText');
+            const btnLoader = document.getElementById('btnLoader');
+            const errorMsg = document.getElementById('errorMsg');
+            const dashboard = document.getElementById('dashboard');
+
+            btnText.classList.add('hidden'); btnLoader.classList.remove('hidden');
+            errorMsg.classList.add('hidden'); errorMsg.classList.remove('opacity-100');
+            dashboard.classList.add('hidden', 'opacity-0');
+
+            fetch(apiUrl + ticker)
+                .then(response => {
+                    if (!response.ok) throw new Error('Erro');
+                    return response.json();
+                })
+                .then(data => {
+                    btnText.classList.remove('hidden'); btnLoader.classList.add('hidden');
+                    renderDashboard(ticker, data);
+                })
+                .catch(error => {
+                    console.error("Erro:", error);
+                    btnText.classList.remove('hidden'); btnLoader.classList.add('hidden');
+                    errorMsg.classList.remove('hidden');
+                    setTimeout(() => errorMsg.classList.add('opacity-100'), 10);
+                });
+        });
+
+        function renderDashboard(ticker, data) {
+            const analysis = AnalysisEngine.calculateScore(data);
+            
+            document.getElementById('valPrice').innerText = formatCurrency(data.price);
+            document.getElementById('valSector').innerText = `${data.type} | ${data.sector}`;
+            
+            const pvpEl = document.getElementById('valPvp'); pvpEl.innerText = data.pvp;
+            const pvpLabel = document.getElementById('labelPvp');
+            if (data.pvp < 1) { pvpEl.className = 'text-2xl font-bold text-status-good'; pvpLabel.innerText = 'Desconto'; pvpLabel.className = 'text-xs mt-2 px-2 py-0.5 rounded-full w-max bg-status-good/20 text-status-good'; }
+            else if (data.pvp > 1.05) { pvpEl.className = 'text-2xl font-bold text-status-bad'; pvpLabel.innerText = 'Ágio (Caro)'; pvpLabel.className = 'text-xs mt-2 px-2 py-0.5 rounded-full w-max bg-status-bad/20 text-status-bad'; }
+            else { pvpEl.className = 'text-2xl font-bold text-white'; pvpLabel.innerText = 'Preço Justo'; pvpLabel.className = 'text-xs mt-2 px-2 py-0.5 rounded-full w-max bg-slate-700 text-slate-300'; }
+
+            document.getElementById('valDy').innerText = `${data.dy}%`;
+            document.getElementById('valLiq').innerText = formatNumber(data.liquidity);
+
+            document.getElementById('scoreValue').innerText = analysis.score;
+            const scoreLabel = document.getElementById('scoreLabel');
+            scoreLabel.innerText = analysis.rating;
+            scoreLabel.className = `text-lg font-bold px-4 py-1 rounded-full border mt-2 ${analysis.colorClass}`;
+
+            const analysisTextContainer = document.getElementById('analysisText');
+            let textHtml = `<p>Analisando <strong>${ticker}</strong>, extraído em tempo real do <em>StatusInvest</em>:</p><ul class="list-none space-y-2 mt-4">`;
+            analysis.logs.forEach(log => {
+                let icon = '<i class="fa-solid fa-check text-status-good mr-2"></i>';
+                if(log.toLowerCase().includes('risco') || log.toLowerCase().includes('esticado')) icon = '<i class="fa-solid fa-xmark text-status-bad mr-2"></i>';
+                else if (log.toLowerCase().includes('atenção') || log.toLowerCase().includes('justo')) icon = '<i class="fa-solid fa-minus text-status-warning mr-2"></i>';
+                textHtml += `<li class="flex items-start"><span>${icon}</span><span class="flex-1">${log}</span></li>`;
+            });
+            textHtml += `</ul>`;
+            analysisTextContainer.innerHTML = textHtml;
+
+            document.getElementById('fundDetailsList').innerHTML = `
+                <li class="flex justify-between border-b border-slate-700/50 pb-2"><span class="text-slate-400">Extração</span><span class="font-medium text-blue-400">Tempo Real</span></li>
+                <li class="flex justify-between border-b border-slate-700/50 pb-2"><span class="text-slate-400">Segmento</span><span class="font-medium text-white">${data.sector}</span></li>
+                <li class="flex justify-between border-b border-slate-700/50 pb-2"><span class="text-slate-400">Perfil</span><span class="font-medium text-white">${data.type}</span></li>
+                <li class="flex justify-between pb-2"><span class="text-slate-400">Fonte dos Dados</span><span class="font-medium text-white">StatusInvest</span></li>
+            `;
+
+            drawCharts(analysis.score, data.dividends, data.prices);
+
+            const dashboard = document.getElementById('dashboard');
+            dashboard.classList.remove('hidden');
+            setTimeout(() => dashboard.classList.remove('opacity-0'), 50);
+        }
+
+        function drawCharts(score, dividends, prices) {
+            Chart.defaults.color = '#94a3b8'; Chart.defaults.font.family = 'Inter';
+            
+            // Score Gauge
+            if (scoreChartInst) scoreChartInst.destroy();
+            let scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+            scoreChartInst = new Chart(document.getElementById('scoreChart').getContext('2d'), {
+                type: 'doughnut',
+                data: { datasets: [{ data: [score, 100 - score], backgroundColor: [scoreColor, '#334155'], borderWidth: 0, circumference: 270, rotation: 225, cutout: '85%' }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false } } }
+            });
+
+            // Dividend Bar
+            if (divChartInst) divChartInst.destroy();
+            divChartInst = new Chart(document.getElementById('dividendChart').getContext('2d'), {
+                type: 'bar',
+                data: { labels: Array(12).fill(''), datasets: [{ data: dividends, backgroundColor: '#3b82f6', borderRadius: 4 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { display: false } } }
+            });
+
+            // Price Line
+            const ctxPrice = document.getElementById('priceChart').getContext('2d');
+            if (priceChartInst) priceChartInst.destroy();
+            let gradient = ctxPrice.createLinearGradient(0, 0, 0, 200);
+            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+            priceChartInst = new Chart(ctxPrice, {
+                type: 'line',
+                data: { labels: Array(6).fill(''), datasets: [{ data: prices, borderColor: '#10b981', backgroundColor: gradient, borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { display: false } } }
+            });
+        }
+    </script>
+</body>
+</html>
